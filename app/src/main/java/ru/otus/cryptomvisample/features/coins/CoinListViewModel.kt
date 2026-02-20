@@ -25,18 +25,58 @@ class CoinListViewModel(
     val state: StateFlow<CoinsScreenState> = _state.asStateFlow()
 
     private var fullCategories: List<CoinCategoryState> = emptyList()
-    private var highlightMovers = false
 
     init {
-        requestCoins()
+        handleAction(CoinListAction.LoadCoins)
     }
 
-    fun onHighlightMoversToggled(isChecked: Boolean) {
-        highlightMovers = isChecked
-        updateUiState()
+    fun handleAction(action: CoinListAction) {
+        // Dispatcher
+        when (action) {
+            is CoinListAction.LoadCoins -> requestCoins()
+            is CoinListAction.ToggleHighlightMovers -> {
+                dispatch(CoinListChange.HighlightMovers(action.isChecked))
+            }
+            is CoinListAction.ToggleFavourite -> toggleFavourite(action.coinId)
+        }
     }
 
-    fun onToggleFavourite(coinId: String) {
+    private fun dispatch(change: CoinListChange) {
+        _state.update { currentState ->
+            reduce(currentState, change)
+        }
+    }
+
+    private fun reduce(currentState: CoinsScreenState, change: CoinListChange): CoinsScreenState {
+        // Reducer
+        return when (change) {
+            is CoinListChange.CoinsLoaded -> {
+                fullCategories = change.categories
+                currentState.copy(
+                    categories = applyHighlight(fullCategories, currentState.highlightMovers)
+                )
+            }
+            is CoinListChange.HighlightMovers -> {
+                currentState.copy(
+                    highlightMovers = change.isChecked,
+                    categories = applyHighlight(fullCategories, change.isChecked)
+                )
+            }
+        }
+    }
+
+    private fun applyHighlight(
+        categories: List<CoinCategoryState>,
+        highlightMovers: Boolean
+    ): List<CoinCategoryState> {
+        return categories.map { category ->
+            category.copy(coins = category.coins.map { coin ->
+                coin.copy(highlight = highlightMovers && coin.isHotMover)
+            })
+        }
+    }
+
+    private fun toggleFavourite(coinId: String) {
         val isCurrentlyFavorite = fullCategories.any { category ->
             category.coins.any { coin -> coin.id == coinId && coin.isFavourite }
         }
@@ -54,30 +94,11 @@ class CoinListViewModel(
                 categories.map { category -> coinsStateFactory.create(category) }
             }
             .onEach { categoryListState ->
-                fullCategories = categoryListState
-                updateUiState()
+                dispatch(CoinListChange.CoinsLoaded(categoryListState))
             }
             .catch {
-                fullCategories = emptyList()
-                updateUiState()
+                dispatch(CoinListChange.CoinsLoaded(emptyList()))
             }
             .launchIn(viewModelScope)
-    }
-
-    private fun updateUiState() {
-        val processedCategories = fullCategories.map { category ->
-            category.copy(coins = category.coins.map { coin ->
-                coin.copy(
-                    highlight = highlightMovers && coin.isHotMover
-                )
-            })
-        }
-
-        _state.update { 
-            it.copy(
-                categories = processedCategories,
-                highlightMovers = highlightMovers
-            )
-        }
     }
 }

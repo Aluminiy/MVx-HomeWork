@@ -8,9 +8,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.update
 import ru.otus.cryptomvisample.common.domain_api.ConsumeFavoriteCoinsUseCase
 import ru.otus.cryptomvisample.common.domain_api.UnsetFavouriteCoinUseCase
-
 
 class FavoriteViewModel(
     private val consumeFavoriteCoinsUseCase: ConsumeFavoriteCoinsUseCase,
@@ -22,10 +22,33 @@ class FavoriteViewModel(
     val state: StateFlow<FavoriteCoinsScreenState> = _state.asStateFlow()
 
     init {
-        loadFavoriteCoins()
+        handleAction(FavoriteAction.LoadFavorites)
     }
 
-    fun removeFavourite(coinId: String) {
+    fun handleAction(action: FavoriteAction) {
+        // Dispatcher
+        when (action) {
+            is FavoriteAction.LoadFavorites -> loadFavoriteCoins()
+            is FavoriteAction.RemoveFavorite -> removeFavourite(action.coinId)
+        }
+    }
+
+    private fun dispatch(change: FavoriteChange) {
+        _state.update { currentState ->
+            reduce(currentState, change)
+        }
+    }
+
+    private fun reduce(currentState: FavoriteCoinsScreenState, change: FavoriteChange): FavoriteCoinsScreenState {
+        // Reducer
+        return when (change) {
+            is FavoriteChange.FavoritesLoaded -> {
+                currentState.copy(favoriteCoins = change.favoriteCoins)
+            }
+        }
+    }
+
+    private fun removeFavourite(coinId: String) {
         unsetFavouriteCoinUseCase(coinId)
     }
 
@@ -37,7 +60,7 @@ class FavoriteViewModel(
                 }
             }
             .onEach { favoriteCoinsState ->
-                _state.value = _state.value.copy(favoriteCoins = favoriteCoinsState)
+                dispatch(FavoriteChange.FavoritesLoaded(favoriteCoinsState))
             }
             .launchIn(viewModelScope)
     }
